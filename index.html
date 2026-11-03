@@ -525,7 +525,7 @@
 
   .controls{
     display: flex;
-    gap: 8px;
+    gap: 40px; /* 戻る・リセットの押し間違いを防ぐため広めに離す */
     pointer-events: auto;
   }
   .ctrl-btn{
@@ -692,7 +692,7 @@
       bottom: auto;
       left: auto;
     }
-    .controls{ justify-content: center; }
+    .controls{ justify-content: center; gap: 64px; }
   }
 
   /* スマホ横向き（低い画面高さ）: 上下を圧迫しないよう、情報を左右に配置 */
@@ -710,7 +710,7 @@
     .player-tag{ padding: 5px 8px 6px; }
     .p-tag-top{ font-size: 11px; }
     .p-tag-score{ font-size: 9.5px; }
-    .controls{ flex-direction: column; gap: 6px; }
+    .controls{ flex-direction: column; gap: 28px; }
     .ctrl-btn{ padding: 7px 10px; font-size: 10px; }
     .ctrl-btn .btn-label{ display: none; } /* 横向きはアイコンのみで省スペース */
     .ctrl-btn.icon-only, .controls .ctrl-btn{ border-radius: 50%; padding: 8px; }
@@ -1006,7 +1006,7 @@
 
       <button class="start-btn" id="startBtn">ゲームスタート</button>
       <div class="setup-warning" id="setupWarning"></div>
-      <div class="app-footer">v1.22 ／ © 2026 mifuji</div>
+      <div class="app-footer">v1.23 ／ © 2026 mifuji</div>
     </div>
   </div>
 
@@ -1866,6 +1866,76 @@
     });
   }
 
+  // 玉のジオメトリ。棒ありモードでは、柱が通る縦穴（ふちを少し面取り）を空ける
+  // 棒ありモードでの穴の寸法（玉本体と輪郭線で共通）
+  function pieceHoleDims(){
+    const R = CELL*0.36;
+    const rh = CELL*PILLAR_RADIUS_RATIO*1.15; // 柱よりほんの少し太い穴
+    const c = R*0.06;                          // 面取りの大きさ
+    const r1 = rh + c;                         // 面取りが球面に当たる半径
+    const y1 = Math.sqrt(R*R - r1*r1);         // 面取りが球面に当たる高さ
+    return {R, rh, c, r1, y1};
+  }
+
+  // 断面（半径, 高さ）の点列を回転させて立体にする
+  function latheFrom(list, segs){
+    return new THREE.LatheGeometry(list.map(q=>new THREE.Vector2(q[0], q[1])), segs);
+  }
+
+  // 玉のジオメトリ。棒ありモードでは、柱が通る縦穴（ふちを少し面取り）を空ける
+  function makePieceGeometry(segs){
+    if(pillarViewMode !== 0) return new THREE.SphereGeometry(CELL*0.36, segs, segs);
+    const {R, rh, c, r1, y1} = pieceHoleDims();
+    const phi1 = Math.asin(y1/R);
+    const yb = y1 - c;                         // 穴の壁が始まる高さ
+    const pts = [];
+    // 断面を反時計回りに一周: 球面(下→上) → 上の面取り → 穴の壁(上→下) → 下の面取り
+    const n = Math.max(12, segs);
+    for(let i=0;i<=n;i++){
+      const a = -phi1 + 2*phi1*i/n;
+      pts.push([R*Math.cos(a), R*Math.sin(a)]);
+    }
+    // 角を立てるため、折れ目の点は2回入れる
+    pts.push([r1, y1], [rh, yb], [rh, yb], [rh, -yb], [rh, -yb], [r1, -y1], [r1, -y1]);
+    return latheFrom(pts, segs);
+  }
+
+  // 輪郭線用: 拡大(OUTLINE_PIECE倍)したとき、上下の切り口が玉のふちと同じ高さになるよう平らに切る
+  function makeOutlineGeometry(segs){
+    if(pillarViewMode !== 0) return new THREE.SphereGeometry(CELL*0.36, segs, segs);
+    const {R, r1, y1} = pieceHoleDims();
+    const k = OUTLINE_PIECE;
+    const yT = y1*0.985/k;
+    const aT = Math.asin(yT/R);
+    const rIn = r1*1.02/k; // 面取りより外側に置き、穴のふちから黒が見えないようにする
+    const pts = [];
+    const n = Math.max(12, segs);
+    for(let i=0;i<=n;i++){
+      const a = -aT + 2*aT*i/n;
+      pts.push([R*Math.cos(a), R*Math.sin(a)]);
+    }
+    pts.push([R*Math.cos(aT), yT], [rIn, yT], [rIn, yT], [rIn, -yT], [rIn, -yT], [R*Math.cos(aT), -yT]);
+    return latheFrom(pts, segs);
+  }
+
+  // 表示モード切替時に、置いてある玉の形を作り直す
+  function refreshPieceGeometries(){
+    for(let x=0;x<SIZE;x++)
+      for(let z=0;z<SIZE;z++)
+        for(let y=0;y<SIZE;y++){
+          const m = pieceMeshes[x] && pieceMeshes[x][z] && pieceMeshes[x][z][y];
+          if(!m) continue;
+          m.geometry.dispose();
+          m.geometry = makePieceGeometry(28);
+          m.children.forEach(ch=>{
+            if(!(ch.userData && ch.userData.isOutline)) return;
+            ch.geometry.dispose();
+            ch.geometry = makeOutlineGeometry(28);
+          });
+        }
+    updateGhostPiece();
+  }
+
   // トゥーン風の輪郭線: ジオメトリを少し拡大した黒い裏面メッシュを子として付ける
   function addToonOutline(parentMesh, geometry, scale){
     const outlineMat = new THREE.MeshBasicMaterial({color:0x1a1a1a, side:THREE.BackSide});
@@ -1877,8 +1947,7 @@
   }
 
   function spawnPiece(x,y,z,player){
-    const ballRadius = CELL*0.36;
-    const geo = new THREE.SphereGeometry(ballRadius, 28, 28);
+    const geo = makePieceGeometry(28);
     const mat = pieceMaterial(player);
     const mesh = new THREE.Mesh(geo, mat);
     const target = gridToWorld(x,y,z);
@@ -1887,7 +1956,7 @@
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData = {falling:true, targetY: target.y, vy:0, x,y,z};
-    addToonOutline(mesh, geo, OUTLINE_PIECE); // 絵本風の黒い縁取り（統一太さ）
+    addToonOutline(mesh, makeOutlineGeometry(28), OUTLINE_PIECE); // 絵本風の黒い縁取り（統一太さ）
     pieceGroup.add(mesh);
     pieceMeshes[x][z][y] = mesh;
     return mesh;
@@ -2002,6 +2071,7 @@
   function toggleTransparency(){
     pillarViewMode = (pillarViewMode + 1) % 2; // 0:棒あり ⇔ 1:線のみ
     applyPillarViewMode();
+    refreshPieceGeometries();
   }
 
   function applyPillarViewMode(){
@@ -2362,8 +2432,7 @@
     const {x, z} = selectedColumn;
     const y = heights[x][z];
     if(y >= SIZE) return;
-    const ballRadius = CELL*0.36;
-    const geo = new THREE.SphereGeometry(ballRadius, 24, 24);
+    const geo = makePieceGeometry(24);
     const color = playerHexColor(currentPlayer);
     const mat = new THREE.MeshStandardMaterial({
       color, roughness:0.3, metalness:0.2,
@@ -2644,6 +2713,7 @@
     const mesh = pieceMeshes[x][z][y];
     if(mesh){
       pieceGroup.remove(mesh);
+      mesh.children.forEach(ch=>{ if(ch.geometry && ch.geometry !== mesh.geometry) ch.geometry.dispose(); });
       mesh.geometry.dispose();
       mesh.material.dispose();
       pieceMeshes[x][z][y] = null;
