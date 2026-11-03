@@ -1006,7 +1006,7 @@
 
       <button class="start-btn" id="startBtn">ゲームスタート</button>
       <div class="setup-warning" id="setupWarning"></div>
-      <div class="app-footer">v1.23 ／ © 2026 mifuji</div>
+      <div class="app-footer">v1.24 ／ © 2026 mifuji</div>
     </div>
   </div>
 
@@ -1871,7 +1871,7 @@
   function pieceHoleDims(){
     const R = CELL*0.36;
     const rh = CELL*PILLAR_RADIUS_RATIO*1.15; // 柱よりほんの少し太い穴
-    const c = R*0.06;                          // 面取りの大きさ
+    const c = R*0.07;                          // 面取りの大きさ
     const r1 = rh + c;                         // 面取りが球面に当たる半径
     const y1 = Math.sqrt(R*R - r1*r1);         // 面取りが球面に当たる高さ
     return {R, rh, c, r1, y1};
@@ -1900,24 +1900,6 @@
     return latheFrom(pts, segs);
   }
 
-  // 輪郭線用: 拡大(OUTLINE_PIECE倍)したとき、上下の切り口が玉のふちと同じ高さになるよう平らに切る
-  function makeOutlineGeometry(segs){
-    if(pillarViewMode !== 0) return new THREE.SphereGeometry(CELL*0.36, segs, segs);
-    const {R, r1, y1} = pieceHoleDims();
-    const k = OUTLINE_PIECE;
-    const yT = y1*0.985/k;
-    const aT = Math.asin(yT/R);
-    const rIn = r1*1.02/k; // 面取りより外側に置き、穴のふちから黒が見えないようにする
-    const pts = [];
-    const n = Math.max(12, segs);
-    for(let i=0;i<=n;i++){
-      const a = -aT + 2*aT*i/n;
-      pts.push([R*Math.cos(a), R*Math.sin(a)]);
-    }
-    pts.push([R*Math.cos(aT), yT], [rIn, yT], [rIn, yT], [rIn, -yT], [rIn, -yT], [R*Math.cos(aT), -yT]);
-    return latheFrom(pts, segs);
-  }
-
   // 表示モード切替時に、置いてある玉の形を作り直す
   function refreshPieceGeometries(){
     for(let x=0;x<SIZE;x++)
@@ -1925,13 +1907,12 @@
         for(let y=0;y<SIZE;y++){
           const m = pieceMeshes[x] && pieceMeshes[x][z] && pieceMeshes[x][z][y];
           if(!m) continue;
-          m.geometry.dispose();
-          m.geometry = makePieceGeometry(28);
-          m.children.forEach(ch=>{
-            if(!(ch.userData && ch.userData.isOutline)) return;
-            ch.geometry.dispose();
-            ch.geometry = makeOutlineGeometry(28);
-          });
+          const old = m.geometry;
+          const geo = makePieceGeometry(28);
+          m.geometry = geo;
+          // 輪郭線は玉と同じ形を拡大して使う（穴のふち・切り口にも黒い線が出る）
+          m.children.forEach(ch=>{ if(ch.userData && ch.userData.isOutline) ch.geometry = geo; });
+          old.dispose();
         }
     updateGhostPiece();
   }
@@ -1956,7 +1937,7 @@
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData = {falling:true, targetY: target.y, vy:0, x,y,z};
-    addToonOutline(mesh, makeOutlineGeometry(28), OUTLINE_PIECE); // 絵本風の黒い縁取り（統一太さ）
+    addToonOutline(mesh, geo, OUTLINE_PIECE); // 絵本風の黒い縁取り（統一太さ）。穴のふちにも線が出る
     pieceGroup.add(mesh);
     pieceMeshes[x][z][y] = mesh;
     return mesh;
