@@ -1006,7 +1006,7 @@
 
       <button class="start-btn" id="startBtn">ゲームスタート</button>
       <div class="setup-warning" id="setupWarning"></div>
-      <div class="app-footer">v1.21 ／ © 2026 mifuji</div>
+      <div class="app-footer">v1.22 ／ © 2026 mifuji</div>
     </div>
   </div>
 
@@ -3314,6 +3314,43 @@
     }, 3100);
   }
 
+})();
+</script>
+
+<script>
+// 画面端スワイプ（戻る操作）でアプリが閉じるのを防ぐ。
+// 履歴にダミーを1つ積んでおき、戻る操作はそのダミーを消費するだけにする。
+// 2秒以内にもう一度戻る操作をすると、本当に終了する。
+(function(){
+  if (!window.history || !history.pushState) return;
+  var armed = false;   // ダミー履歴が積まれているか
+  var hideTimer = null;
+
+  // Chromeはユーザー操作なしで積んだ履歴を「戻る」で飛ばすため、タップ時に積む
+  function arm(){
+    if (armed) return;
+    try { history.pushState({ backGuard: true }, ''); armed = true; } catch(e){}
+  }
+  ['pointerdown','touchstart','keydown'].forEach(function(t){
+    window.addEventListener(t, arm, { capture: true, passive: true });
+  });
+
+  var toast = document.createElement('div');
+  toast.textContent = 'もう一度「戻る」で終了します';
+  toast.setAttribute('role', 'status');
+  toast.style.cssText = 'position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));' +
+    'transform:translateX(-50%);z-index:99999;padding:10px 18px;border-radius:999px;' +
+    'background:rgba(20,20,28,.92);color:#fff;font-size:14px;font-weight:600;' +
+    'box-shadow:0 4px 16px rgba(0,0,0,.35);pointer-events:none;opacity:0;transition:opacity .2s;white-space:nowrap;';
+  document.body.appendChild(toast);
+
+  window.addEventListener('popstate', function(){
+    if (!armed) return;
+    armed = false; // 次のタップで再びガードされる。タップせずにもう一度戻ると終了
+    toast.style.opacity = '1';
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function(){ toast.style.opacity = '0'; }, 2000);
+  });
 })();
 </script>
 
