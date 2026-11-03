@@ -112,6 +112,8 @@
     color: var(--ink);
   }
   .chip:hover{ background: var(--panel-2); }
+  #modeChips .chip{ white-space: nowrap; font-size: 13px; letter-spacing: 0; padding-left: 2px; padding-right: 2px; min-width: 0; }
+  #cpuPanel .setup-label{ margin-top: 18px; }
   .chip.active{
     background: var(--ink);
     color: #fff;
@@ -133,11 +135,16 @@
   }
   .color-row{
     display: flex;
-    gap: 9px;
+    gap: 6px;
     flex: 1;
+    width: 100%;
+    justify-content: space-between; /* 8色が画面幅からはみ出さないよう均等配置 */
   }
   .color-swatch{
-    width: 34px; height: 34px;
+    width: min(34px, calc((100% - 42px) / 8));
+    height: auto;
+    aspect-ratio: 1 / 1;
+    flex: 0 0 auto;
     border-radius: 50%;
     cursor: pointer;
     border: 2.5px solid transparent;
@@ -316,8 +323,11 @@
     align-items: center;
     gap: 6px;
     pointer-events: none;
+    width: max-content; /* 中央寄せでも幅が半分に縮んで折り返さないように */
+    max-width: calc(100vw - 24px);
   }
   .turn-banner{
+    white-space: nowrap;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -330,6 +340,7 @@
     box-shadow: 0 2px 10px rgba(0,0,0,0.05);
   }
   .turn-dot{
+    flex-shrink: 0;
     width: 9px; height: 9px;
     border-radius: 50%;
     background: #999;
@@ -568,7 +579,7 @@
     justify-content: flex-start;
     background: transparent;
     pointer-events: none;
-    padding-left: 16px;
+    padding: 0 16px;
   }
   .overlay.show{ display: flex; }
   .result-card{
@@ -587,15 +598,37 @@
     from{ opacity:0; transform: translateY(-12px); }
     to{ opacity:1; transform: translateY(0); }
   }
+  .result-who{
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .result-who:empty, .result-who.hidden{ display: none; }
+  .result-dot{
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
+  }
   .result-kanji{
     font-family: 'Zen Old Mincho', serif;
     font-weight: 900;
-    font-size: 26px;
-    letter-spacing: 0.08em;
+    font-size: 30px;
+    line-height: 1.25;
+    letter-spacing: 0.12em;
     margin-bottom: 2px;
+    white-space: nowrap; /* 大きな文字は折り返さない */
   }
   .result-sub{
-    font-size: 10.5px;
+    font-size: 11px;
     letter-spacing: 0.1em;
     color: var(--ink-dim);
     margin-bottom: 14px;
@@ -608,7 +641,13 @@
   }
   .result-card .btn-row .ctrl-btn{
     justify-content: center;
+    white-space: nowrap;
   }
+  .result-card .btn-pair{
+    display: flex;
+    gap: 8px;
+  }
+  .result-card .btn-pair .ctrl-btn{ flex: 1; padding-left: 10px; padding-right: 10px; }
 
   /* 結果を隠した後に再表示する小さなボタン（普段は非表示） */
   .show-result-btn{
@@ -663,7 +702,7 @@
     font-weight: 300;
   }
   .modal ul{ padding-left: 18px; margin: 0 0 18px; }
-  .modal .ctrl-btn{ width: 100%; }
+  .modal .ctrl-btn{ width: 100%; justify-content: center; padding-top: 11px; padding-bottom: 11px; font-size: 12px; }
 
   @media (max-width: 680px){
     .brand{ font-size: 17px; }
@@ -671,7 +710,9 @@
     .players{ gap: 8px; }
     .player-tag{ padding: 6px 10px 7px; }
     .p-tag-top{ font-size: 12px; }
-    .result-kanji{ font-size: 38px; }
+    .overlay{ left: 0; right: 0; justify-content: center; }
+    .result-card{ width: 100%; max-width: 360px; padding: 18px 20px 18px; }
+    .result-kanji{ font-size: 36px; }
     .setup-card{ padding: 36px 22px 30px; }
     .player-setup-row{ flex-direction: column; align-items: flex-start; gap: 8px; }
     .player-setup-row .p-label{ width: auto; }
@@ -717,8 +758,10 @@
 
     .confirm-hint{ top: 10px; left: auto; right: 12px; transform: translateY(-6px); }
     .confirm-hint.show{ transform: translateY(0); }
-    .result-card{ max-width: 50vw; padding: 12px 16px 14px; }
+    .overlay{ right: auto; justify-content: flex-start; }
+    .result-card{ width: auto; max-width: 50vw; padding: 12px 16px 14px; }
     .result-kanji{ font-size: 24px; }
+    .result-sub{ margin-bottom: 10px; }
     .show-result-btn{ top: 50px; }
   }
 
@@ -897,7 +940,7 @@
   .setup-card.compact .setup-label{ margin-bottom: 6px; }
   .setup-card.compact .player-setup-row{ margin-bottom: 8px; }
   .setup-card.compact .chip{ padding: 9px 0; font-size: 14px; }
-  .setup-card.compact .color-swatch{ width: 30px; height: 30px; }
+  .setup-card.compact .color-swatch{ width: min(30px, calc((100% - 42px) / 8)); }
   .setup-card.compact .online-actions{ margin-top: 6px; }
   .setup-card.compact .online-block{ margin: 4px 0; }
   .setup-card.compact .online-divider{ margin: 9px 0 7px; }
@@ -948,13 +991,13 @@
           <div class="chip" data-mode="cpu">CPUと対戦</div>
           <div class="chip" data-mode="online">オンライン対戦</div>
         </div>
-        <div id="cpuPanel" style="display:none; margin-top:12px;">
+        <div id="cpuPanel" style="display:none;">
           <div class="setup-label">あなたの手番 <span class="hint">先攻=先手</span></div>
           <div class="chip-row" id="cpuTurnChips">
             <div class="chip" data-cputurn="first">あなたが先攻</div>
             <div class="chip" data-cputurn="second">あなたが後攻</div>
           </div>
-          <div class="setup-label" style="margin-top:14px;">CPUの強さ</div>
+          <div class="setup-label">CPUの強さ</div>
           <div class="chip-row" id="cpuStrengthChips">
             <div class="chip" data-strength="easy">弱</div>
             <div class="chip" data-strength="normal">普通</div>
@@ -1006,7 +1049,7 @@
 
       <button class="start-btn" id="startBtn">ゲームスタート</button>
       <div class="setup-warning" id="setupWarning"></div>
-      <div class="app-footer">v1.25 ／ © 2026 mifuji</div>
+      <div class="app-footer">v1.26 ／ © 2026 mifuji</div>
     </div>
   </div>
 
@@ -1081,12 +1124,15 @@
 
     <div class="overlay" id="resultOverlay">
       <div class="result-card">
-        <div class="result-kanji" id="resultKanji">勝</div>
+        <div class="result-who" id="resultWho"><span class="result-dot" id="resultDot"></span><span id="resultWhoText"></span></div>
+        <div class="result-kanji" id="resultKanji">勝利</div>
         <div class="result-sub" id="resultSub">FOUR IN A ROW</div>
         <div class="btn-row">
           <button class="ctrl-btn" id="playAgainBtn">同じ設定で再戦</button>
-          <button class="ctrl-btn ghost" id="changeSetupBtn">設定を変える</button>
-          <button class="ctrl-btn ghost" id="hideResultBtn">盤面を見る（閉じる）</button>
+          <div class="btn-pair">
+            <button class="ctrl-btn ghost" id="changeSetupBtn">設定を変える</button>
+            <button class="ctrl-btn ghost" id="hideResultBtn">盤面を見る</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1128,7 +1174,9 @@
           <li>選択中に別の柱のキャップをタップすると、選択先がそちらに移ります。</li>
           <li>キャップ以外の場所（柱や土台）をドラッグすると、盤を回転できます。</li>
           <li>縦・横・高さ・斜め・立体対角線を含む、あらゆる直線方向に、設定した数だけ自分の玉が並べば勝利です。</li>
-          <li>CPU対戦では、CPUは後手として自動で玉を置きます。</li>
+          <li>2本指でつまむと拡大・縮小、目のボタンで「棒あり／線のみ」を切り替えられます。</li>
+          <li>「戻る」で1手ずつ戻せます。CPU対戦では、CPUの手とあなたの手をまとめて戻します。</li>
+          <li>CPU対戦では、先攻・後攻とCPUの強さを選べます。</li>
         </ul>
         <button class="ctrl-btn" id="closeRulesBtn">閉じる</button>
       </div>
@@ -2364,6 +2412,7 @@
         // 玉の色は変えず（プレイヤーの玉のまま）、縁（アウトライン）の色だけ金に変える
         const outline = mesh.children.find(c=>c.userData && c.userData.isOutline);
         if(outline) outline.material.color.setHex(WIN_OUTLINE_COLOR);
+        mesh.material.emissive = new THREE.Color(color).multiplyScalar(0.35);
         mesh.scale.set(1.15,1.15,1.15); // 大きく（今の実装のまま）
         winPieces.push({mesh, outline});
       }
@@ -2393,24 +2442,53 @@
     return (p===1 ? '先手' : '後手') + (gameMode==='cpu' && p===cpuPlayer ? '（CPU）' : '');
   }
   function updateTurnUI(){
-    const hex = playerHexColor(currentPlayer);
-    turnDot.style.background = hexToCss(hex);
-    turnDot.style.boxShadow = `0 0 8px 1px ${hexToCss(hex)}`;
-    turnText.textContent = playerLabel(currentPlayer) + 'の番';
+    if(!gameOver){ // 終局後は「〜の勝ち」表示を残す
+      const hex = playerHexColor(currentPlayer);
+      turnDot.style.background = hexToCss(hex);
+      turnDot.style.boxShadow = `0 0 8px 1px ${hexToCss(hex)}`;
+      turnText.textContent = playerLabel(currentPlayer) + 'の番';
+    }
     p1Tag.classList.toggle('active', currentPlayer===1);
     p2Tag.classList.toggle('active', currentPlayer===2);
     if(NET.online) NET.updateTurnBanner();
   }
 
+  // 結果カードに表示する勝者名（オンラインは名前、CPU戦は「あなた／CPU」を添える）
+  function winnerName(p){
+    const role = p===1 ? '先手' : '後手';
+    if(gameMode === 'cpu') return (p === cpuPlayer ? 'CPU' : 'あなた') + '（' + role + '）';
+    if(NET.online){
+      const el = document.querySelector('#p' + p + 'Tag .p-name');
+      const n = el ? el.textContent.trim() : '';
+      if(n) return n + '（' + role + '）';
+    }
+    return role;
+  }
+
   function showResult(winner){
+    const who = document.getElementById('resultWho');
+    const whoText = document.getElementById('resultWhoText');
+    const dot = document.getElementById('resultDot');
+    const moves = moveHistory.length;
     if(winner === 'draw'){
-      resultKanji.textContent = '引分';
+      who.classList.add('hidden');
+      resultKanji.textContent = '引き分け';
       resultKanji.style.color = '#8A8A86';
-      resultSub.textContent = 'DRAW — 盤面が満ちました';
+      resultSub.textContent = `盤面が埋まりました ・ ${moves}手`;
+      turnText.textContent = '引き分け';
+      turnDot.style.background = '#8A8A86';
+      turnDot.style.boxShadow = 'none';
     } else {
-      resultKanji.textContent = playerLabel(winner) + '勝利';
-      resultKanji.style.color = hexToCss(playerHexColor(winner));
-      resultSub.textContent = `${WIN_LEN}連達成`;
+      const hex = hexToCss(playerHexColor(winner));
+      who.classList.remove('hidden');
+      whoText.textContent = winnerName(winner);
+      dot.style.background = hex;
+      resultKanji.textContent = '勝利';
+      resultKanji.style.color = hex;
+      resultSub.textContent = `${WIN_LEN}連達成 ・ ${moves}手`;
+      turnText.textContent = playerLabel(winner) + 'の勝ち';
+      turnDot.style.background = hex;
+      turnDot.style.boxShadow = `0 0 8px 1px ${hex}`;
     }
     resultOverlay.classList.add('show');
     document.getElementById('showResultBtn').classList.remove('show');
