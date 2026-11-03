@@ -1006,7 +1006,7 @@
 
       <button class="start-btn" id="startBtn">ゲームスタート</button>
       <div class="setup-warning" id="setupWarning"></div>
-      <div class="app-footer">v1.24 ／ © 2026 mifuji</div>
+      <div class="app-footer">v1.25 ／ © 2026 mifuji</div>
     </div>
   </div>
 
@@ -1328,9 +1328,9 @@
   ============================================================ */
   let board, heights, currentPlayer, gameOver, scores, ALL_LINES;
   let moveHistory = []; // 手の履歴（1手戻る用）。各要素は {x,y,z,player}
-  let pendingEval = null;
+  let pendingEval = null; // 着地後に勝敗判定すべき手 {player}（玉が落ちきるまで判定を保留する）
   let lastMove = null; // 直前に置いた玉の強調用
-  let cpuTimer = null; // 着地後に勝敗判定すべき手 {player}（玉が落ちきるまで判定を保留する）
+  let cpuTimer = null; // CPUが打つまでの待ちタイマー
 
   function initBoard(){
     board = [];
@@ -1448,7 +1448,6 @@
   }
 
   function launchGame(){
-    SIZE_AT_LAUNCH: {}
     CELL = SIZE <= 4 ? 1.6 : (SIZE === 5 ? 1.4 : (SIZE === 6 ? 1.22 : 1.06));
     CELL_Y = CELL * 0.78; // 縦方向は78%に詰めて玉同士を近づける
     BOARD_OFFSET = (SIZE-1) * CELL / 2;
@@ -1532,6 +1531,17 @@
     });
   }
 
+  // オブジェクト以下のジオメトリ・マテリアルをGPUメモリから解放する（共有物は1回だけ）
+  function disposeTree(root){
+    if(!root) return;
+    const done = new Set();
+    root.traverse(o=>{
+      if(o.geometry && !done.has(o.geometry)){ done.add(o.geometry); o.geometry.dispose(); }
+      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      mats.forEach(m=>{ if(!done.has(m)){ done.add(m); m.dispose(); } });
+    });
+  }
+
   function clearGroup(g){
     if(!g) return;
     while(g.children.length) g.remove(g.children[0]);
@@ -1545,9 +1555,12 @@
       if(columnHighlightMesh.material) columnHighlightMesh.material.dispose();
       columnHighlightMesh = null;
     }
-    [pillarGroup, capGroup, pieceGroup, winLineGroup].forEach(g=>{ if(g) scene.remove(g); });
-    if(window.__basePlateGroup) scene.remove(window.__basePlateGroup);
-    if(window.__gridGroup) scene.remove(window.__gridGroup);
+    [pillarGroup, capGroup, pieceGroup, winLineGroup, window.__basePlateGroup, window.__gridGroup].forEach(g=>{
+      if(!g) return;
+      scene.remove(g);
+      disposeTree(g); // 作り直すたびにメモリが増え続けないよう、古い盤面は解放する
+    });
+    winPieces = [];
 
     pillarGroup = new THREE.Group();
     capGroup = new THREE.Group();
@@ -1866,8 +1879,7 @@
     });
   }
 
-  // 玉のジオメトリ。棒ありモードでは、柱が通る縦穴（ふちを少し面取り）を空ける
-  // 棒ありモードでの穴の寸法（玉本体と輪郭線で共通）
+  // 棒ありモードでの穴の寸法
   function pieceHoleDims(){
     const R = CELL*0.36;
     const rh = CELL*PILLAR_RADIUS_RATIO*1.15; // 柱よりほんの少し太い穴
@@ -2159,6 +2171,8 @@
         touchDownOnCap = !!cap;
       } else if(e.touches.length === 2){
         isDragging = false; // ピンチ中は回転を止める
+        touchDownOnCap = false; // ピンチ後に指を離しても、柱のタップ扱いにしない
+        touchDragMoved = true;
         lastPinchDist = Math.hypot(
           e.touches[0].clientX-e.touches[1].clientX,
           e.touches[0].clientY-e.touches[1].clientY
@@ -2319,6 +2333,8 @@
       ring.material.opacity = Math.max(0, 0.7 - ring.userData.age);
       if(ring.userData.age > 0.7){
         scene.remove(ring);
+        ring.geometry.dispose();
+        ring.material.dispose();
         return false;
       }
       return true;
@@ -2621,18 +2637,21 @@
       p1Score.textContent = scoreState[1];
       p2Score.textContent = scoreState[2];
       drawWinLine(winInfo.line, winInfo.player);
+      refreshUndoButton();
       setTimeout(()=> showResult(winInfo.player), 500);
       if(NET.online) NET.onGameEnd();
       return;
     }
     if(isBoardFull()){
       gameOver = true;
+      refreshUndoButton();
       setTimeout(()=> showResult('draw'), 500);
       if(NET.online) NET.onGameEnd();
       return;
     }
     currentPlayer = evalPlayer===1 ? 2 : 1;
     updateTurnUI();
+    refreshUndoButton();
     scheduleCpuTurn();
     if(NET.online){ NET.updateTurnBanner(); NET.tryAdvanceMoves(); }
   }
@@ -2674,11 +2693,21 @@
         }
   }
 
-  // 1手戻る（連続で初手まで戻せる）
+  // 1手戻る（連続で初手まで戻せる）。CPU戦ではCPUの手とあなたの手をまとめて戻す
   function undoMove(){
     if(cpuTimer){ clearTimeout(cpuTimer); cpuTimer = null; }
-    if(moveHistory.length === 0) return;
+    if(!canUndo()) return;
     if(anyFalling) return; // 落下アニメーション中のundoは状態不整合の元になるためブロック
+    undoOneMove();
+    // CPU戦: CPUの手を戻しただけだとCPUの番で止まるので、その前のあなたの手も戻す
+    if(gameMode === 'cpu' && currentPlayer === cpuPlayer && moveHistory.length > 0){
+      undoOneMove();
+    }
+    refreshUndoButton();
+    scheduleCpuTurn(); // 念のため（CPUの番になっていればCPUに打たせる）
+  }
+
+  function undoOneMove(){
     pendingEval = null; // 着地後の判定待ちだった場合はキャンセル（巻き戻すため判定不要）
     const last = moveHistory.pop();
     const {x, y, z} = last;
@@ -2725,13 +2754,22 @@
     updateTurnUI();
     const prev = moveHistory.length ? moveHistory[moveHistory.length-1] : null;
     setLastMoveHighlight(prev);
-    refreshUndoButton();
+  }
+
+  // 戻せる手があるか。CPU戦では、あなたの手が1つもなければ戻さない（CPUの初手だけを戻しても意味がないため）
+  function canUndo(){
+    if(moveHistory.length === 0) return false;
+    if(gameMode === 'cpu'){
+      if(currentPlayer === cpuPlayer && !gameOver) return false; // CPUの思考中
+      return moveHistory.some(m => m.player !== cpuPlayer);
+    }
+    return true;
   }
 
   function refreshUndoButton(){
     const btn = document.getElementById('undoBtn');
     if(!btn) return;
-    btn.disabled = (moveHistory.length === 0) || anyFalling || (gameMode==='cpu' && currentPlayer===cpuPlayer);
+    btn.disabled = !canUndo() || anyFalling || !!pendingEval;
   }
 
   /* ============================================================
@@ -2795,6 +2833,7 @@
     let lastPlayers={};
     let currentSpectators={};
     let myName='';
+    let presenceCb=null; // .info/connected の監視（退室時に解除する）
 
     function init(){
       try{
@@ -2833,6 +2872,20 @@
     // ---- 部屋を作る（ホスト） ----
     api.createRoom = async function(code, name){
       if(!db){ alert('オンライン機能を初期化できませんでした。接続情報を確認してください。'); return; }
+      // 同じ番号の部屋が使われていたら上書きしない（他の人の対戦を壊さないため）
+      try{
+        const exist = await db.ref('rooms/'+code).once('value');
+        if(exist.exists()){
+          const d = exist.val() || {};
+          const pl = d.players || {};
+          const mine = d.meta && d.meta.hostId === clientId; // 自分が前に作った部屋は作り直してよい
+          const someoneHere = (pl.host && pl.host.connected) || (pl.guest && pl.guest.connected);
+          if(!mine && someoneHere){
+            alert('その部屋番号は使用中です。別の番号にしてください。');
+            return;
+          }
+        }
+      }catch(e){ console.error(e); alert('接続に失敗しました。'); return; }
       api.online=true; api.mySeat='host'; api.roomId=code; api.launched=false;
       myName = name;
       const turnFirst = Math.random()<0.5 ? 'host' : 'guest';
@@ -2895,7 +2948,8 @@
       const connRef = netRef.child('players/'+seat+'/connected');
       connRef.onDisconnect().set(false);
       // 再接続時に connected を true へ戻す（Firebaseの接続状態を監視）
-      db.ref('.info/connected').on('value', s=>{
+      if(presenceCb) db.ref('.info/connected').off('value', presenceCb);
+      presenceCb = db.ref('.info/connected').on('value', s=>{
         if(s.val()===true && api.online && (api.mySeat===seat)){
           connRef.set(true);
           connRef.onDisconnect().set(false);
@@ -3215,6 +3269,7 @@
           if(stampsCb) netRef.child('stamps').off('child_added', stampsCb);
           if(spectatorsCb) netRef.child('spectators').off('value', spectatorsCb);
           if(movesRef && movesCb) movesRef.off('value', movesCb);
+          if(presenceCb && db){ db.ref('.info/connected').off('value', presenceCb); presenceCb = null; }
           if(api.mySeat==='spectator'){ netRef.child('spectators/'+clientId).remove(); }
           else if(api.mySeat){ netRef.child('players/'+api.mySeat+'/connected').set(false); }
         }
@@ -3348,14 +3403,23 @@
       const roleTxt = roleEl ? roleEl.textContent : (p===1?'先手':'後手');
       const nameTxt = nameEl ? nameEl.textContent.replace('（あなた）','').trim() : '';
       name = nameTxt || roleTxt;
+      if(p !== 1 && p !== 2) return;
       bubbleId = 'p' + p + 'Bubble';
     }
 
     const bubble = document.getElementById(bubbleId);
     if(!bubble) return;
 
-    bubble.innerHTML = '<div class="stamp-bubble-name">' + name + '</div>'
-                     + '<div class="stamp-bubble-text">' + data.text + '</div>';
+    // 受信データはHTMLとして解釈させない（相手の画面にタグやスクリプトを埋め込まれないようにする）
+    bubble.textContent = '';
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'stamp-bubble-name';
+    nameDiv.textContent = String(name).slice(0, 30);
+    const textDiv = document.createElement('div');
+    textDiv.className = 'stamp-bubble-text';
+    textDiv.textContent = String(data.text).slice(0, 20);
+    bubble.appendChild(nameDiv);
+    bubble.appendChild(textDiv);
     bubble.classList.remove('show');
     void bubble.offsetWidth;
     bubble.classList.add('show');
@@ -3371,7 +3435,7 @@
 <script>
 // 画面端スワイプ（戻る操作）でアプリが閉じるのを防ぐ。
 // 履歴にダミーを1つ積んでおき、戻る操作はそのダミーを消費するだけにする。
-// 2秒以内にもう一度戻る操作をすると、本当に終了する。
+// 案内が出たあと、画面に触れずにもう一度戻る操作をすると、本当に終了する。
 (function(){
   if (!window.history || !history.pushState) return;
   var armed = false;   // ダミー履歴が積まれているか
@@ -3408,29 +3472,43 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    // 初回インストール時は再読み込み不要（もともと最新のページを表示している）
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+
+    function inGame(){
+      const g = document.getElementById('gameScreen');
+      return !!(g && g.classList.contains('show'));
+    }
+    // 対戦中は勝手に再読み込みせず、タップで更新できる案内を出す
+    function applyUpdate(){
+      if (!hadController || reloaded) return;
+      if (!inGame()) { reloaded = true; window.location.reload(); return; }
+      if (document.getElementById('updateToast')) return;
+      const t = document.createElement('button');
+      t.id = 'updateToast';
+      t.type = 'button';
+      t.textContent = '新しいバージョンがあります（タップで更新）';
+      t.style.cssText = 'position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top));transform:translateX(-50%);' +
+        'z-index:99998;padding:8px 16px;border-radius:999px;border:none;background:#1a1a1a;color:#fff;' +
+        'font-size:12px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;white-space:nowrap;';
+      t.addEventListener('click', () => { reloaded = true; window.location.reload(); });
+      document.body.appendChild(t);
+    }
+
     navigator.serviceWorker.register('./sw.js').then(reg => {
       // ページを開くたびに新しいsw.jsがないか確認する
       reg.update().catch(()=>{});
-
-      // 新しいservice workerが見つかったら、インストール完了を待って自動でページを最新化
       reg.addEventListener('updatefound', () => {
         const newWorker = reg.installing;
         if (!newWorker) return;
         newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'activated') {
-            window.location.reload();
-          }
+          if (newWorker.state === 'activated') applyUpdate();
         });
       });
     }).catch(console.error);
 
-    // 制御者が切り替わった（新しい版が有効になった）ときも、念のため最新化
-    let reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloaded) return;
-      reloaded = true;
-      window.location.reload();
-    });
+    navigator.serviceWorker.addEventListener('controllerchange', applyUpdate);
   });
 }
 </script>

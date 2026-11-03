@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rittai-nmoku-v3';
+const CACHE_NAME = 'rittai-nmoku-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -56,10 +56,12 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(req, { cache: 'no-store' }) // ブラウザの裏キャッシュも使わせず、必ず最新を取りに行く
         .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME)
-            .then(cache => cache.put('./index.html', copy))
-            .catch(() => {});
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME)
+              .then(cache => cache.put('./index.html', copy))
+              .catch(() => {});
+          }
           return response;
         })
         .catch(() =>
@@ -74,10 +76,13 @@ self.addEventListener('fetch', event => {
     caches.match(req).then(cached => {
       if (cached) return cached;
       return fetch(req).then(response => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME)
-          .then(cache => cache.put(req, copy))
-          .catch(() => {});
+        // エラー応答(404など)はキャッシュしない（一度失敗すると直らなくなるため）
+        if (response.ok || response.type === 'opaque') {
+          const copy = response.clone();
+          caches.open(CACHE_NAME)
+            .then(cache => cache.put(req, copy))
+            .catch(() => {});
+        }
         return response;
       });
     })
